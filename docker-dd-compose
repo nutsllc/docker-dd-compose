@@ -8,12 +8,13 @@ function _DDDinit() {
 }
 
 function _exec_compose() {
-    yml=$1; shift
+    line=$1; shift
+    yml=$(_get_yml "${line}")
     docker-compose -f ${DDD_SEARCH_DIR}/${yml}/docker-compose.yml -p DDD $@
 }
 
 function _add_status() {
-    status=$1; yml=$2
+    status=$1; line=$2; yml=$(_get_yml "${line}")
     path=${DDD_SEARCH_DIR}/${yml}/docker-compose.yml
     if [ ${status} = "none" ]; then
         sed -i -e "s:^\[.*\] ${path}\$:${path}:" ${index_file}
@@ -22,6 +23,27 @@ function _add_status() {
         sed -i -e "s:^${path}\$:\[${status}\] ${path}:" ${index_file}
     fi
 }
+
+function _get_line() {
+    _DDDinit
+    if [ $1 = "all" ]; then
+        line=$(cat "${index_file}" | sed -e "s:${DDD_SEARCH_DIR}/::" -e "s:/docker-compose.yml::" | peco)
+    elif [ $1 = "status-all" ]; then
+        line=$(cat "${index_file}" | grep '\[.*\] ' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
+    elif [ $1 = "running" ]; then
+        line=$(cat "${index_file}" | grep '\[running\] ' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
+    elif [ $1 = "failed-stopped" ]; then
+        line=$(cat "${index_file}" | grep '\[.*\] ' | grep -v '\[running\]' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
+    fi
+    echo ${line}
+}
+
+function _get_yml() {
+    line=$1
+    yml=$(echo ${line} | sed -e "s:${DDD_SEARCH_DIR}/::" -e "s:/docker-compose.yml::" -e "s:^\[.*\] ::")
+    echo ${yml}
+}
+
 
 # ---------------------------------------------------- 
 # Commands
@@ -32,80 +54,73 @@ function DDD() {
 }
 
 function DDDup() {
-    _DDDinit
-    line=$(cat "${index_file}" | sed -e "s:${DDD_SEARCH_DIR}/::" -e "s:/docker-compose.yml::" | peco)
-    yml=$(echo "${line}" | cut -d " " -f2)
-    if [ -n "${yml}" ]; then
-        _exec_compose ${yml} up -d && {
-            _add_status running ${yml}
-        } || _add_status failed ${yml}
+    line=$(_get_line all)
+    if [ -n "${line}" ]; then
+        _exec_compose "${line}" up -d && {
+            _add_status running "${line}"
+        } || _add_status failed "${line}"
     fi
 }
 
 function DDDdown() {
-    _DDDinit
-    line=$(cat "${index_file}" | grep '\[.*\] ' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
-    yml=$(echo "${line}" | cut -d " " -f2)
-    [ -n "${yml}" ] && _exec_compose ${yml} down && {
-        _add_status none "${yml}"
+    line=$(_get_line status-all)
+    [ -n "${line}" ] && _exec_compose "${line}" down && {
+        _add_status none "${line}"
     }
 }
 
 function DDDstart() {
-    _DDDinit
-    line=$(cat "${index_file}" | grep '\[.*\] ' | grep -v '\[running\]' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
-    yml=$(echo "${line}" | cut -d " " -f2)
-    [ -n "${yml}" ] && _exec_compose ${yml} start && {
-        _add_status running ${yml}
+    line=$(_get_line failed-stopped)
+    [ -n "${line}" ] && _exec_compose "${line}" start && {
+        _add_status running "${line}"
     }
 }
 
 function DDDstop() {
-    _DDDinit
-    line=$(cat "${index_file}" | grep '\[running\] ' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
-    yml=$(echo "${line}" | cut -d " " -f2)
-    [ -n "${yml}" ] && _exec_compose ${yml} stop && {
-        _add_status stopped ${yml}
+    line=$(_get_line running)
+    [ -n "${line}" ] && _exec_compose "${line}" stop && {
+        _add_status stopped "${line}"
     }
 }
 
 function DDDrm() {
-    _DDDinit
-    line=$(cat "${index_file}" | grep '\[.*\] ' | grep -v '\[running\] ' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
-    yml=$(echo "${line}" | cut -d " " -f2)
-    [ -n "${yml}" ] && _exec_compose ${yml} rm && {
-        _add_status none ${yml}
+    line=$(_get_line failed-stopped)
+    [ -n "${line}" ] && _exec_compose "${yml}" rm && {
+        _add_status none "${line}"
     }
 }
 
 function DDDlogs() {
-    _DDDinit
-    line=$(cat "${index_file}" | grep '\[.*\] ' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
-    yml=$(echo "${line}" | cut -d " " -f2)
-    [ -n "${yml}" ] && _exec_compose ${yml} logs
+    line=$(_get_line status-all)
+    [ -n "${line}" ] && _exec_compose "${line}" logs
 }
 
 function DDDps() {
-    _DDDinit
-    line=$(cat "${index_file}" | grep '\[.*\] ' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
-    yml=$(echo "${line}" | cut -d " " -f2)
-    [ -n "${yml}" ] && _exec_compose ${yml} ps
+    line=$(_get_line status-all)
+    [ -n "${line}" ] && _exec_compose "${line}" ps
+}
+
+function DDDversion() {
+    line=$(_get_line all)
+    [ -n "${line}" ] && _exec_compose "${line}" version
+}
+
+# ---------------------------------------------------- 
+function DDDcd() {
+    _DDDinit; dest=$1
+    if [ -z "${dest}" ]; then
+        line=$(_get_line all)
+        dest=${DDD_SEARCH_DIR}/$(_get_yml "${line}")
+    fi 
+    [ -n "${dest}" ] && cd $(echo "${dest}")
 }
 
 function DDDhome() {
-    _DDDinit
-    cd "${DDD_HOME}"
+    DDDcd "${DDD_HOME}"
 }
 
 function DDDsearchdir() {
-    _DDDinit
-    cd "${DDD_SEARCH_DIR}"
-}
-
-function DDDcd() {
-    _DDDinit
-    path=$(cat "${index_file}" | peco)
-    [ -n "${path}" ] && cd $(echo "${path}" | sed -e "s:^\[.*\]::" -e "s:/docker-compose.yml::")
+    DDDcd "${DDD_SEARCH_DIR}"
 }
 
 # ---------------------------------------------------- 
@@ -123,4 +138,3 @@ function DDDcd() {
 [ -z "${DDD_SEARCH_DIR}" ] && echo "set DDD_SEARCH_DIR" && return
 
 index_file="${DDD_HOME}/.index"
-yml=""
