@@ -1,0 +1,158 @@
+#!/bin/bash
+
+index_file=""
+running_file=""
+failed_file=""
+
+yml=""
+
+# ---------------------------------------------------- 
+# private functions
+# ---------------------------------------------------- 
+function _DDDinit() {
+    [ ! -f ${index_file} ] && {
+        find ${DDD_SEARCH_DIR} -name docker-compose.yml > ${index_file}
+    }
+    #touch ${running_file}
+    #touch ${failed_file}
+    #touch ${stopped_file}
+}
+
+function _get_yml() {
+   : 
+}
+
+function _exec_compose() {
+    docker-compose -f ${DDD_SEARCH_DIR}/${yml}/docker-compose.yml $@
+}
+
+#function _add_status() {
+#    status=$1; yml=$2
+#    if ! cat ${DDD_HOME}/.status_${status} | grep ^${yml}$; then
+#        echo ${yml} >> ${DDD_HOME}/.status_${status}
+#    fi
+#}
+#
+function _add_status() {
+    status=$1; yml=$2
+    path=${DDD_SEARCH_DIR}/${yml}/docker-compose.yml
+    if [ ${status} = "none" ]; then
+        sed -i -e "s:^\[.*\] ${path}\$:${path}:" ${index_file}
+    else
+        sed -i -e "s:^\[.*\] ${path}\$:\[${status}\] ${path}:" ${index_file}
+        sed -i -e "s:^${path}\$:\[${status}\] ${path}:" ${index_file}
+    fi
+}
+
+#function _remove_status() {
+#    status=$1; yml=$2
+#    sed -i -e ":^${yml}$:d" ${DDD_HOME}/.status_${status}
+#    sed -i -e ":^$:d" ${DDD_HOME}/.status_${status}
+#}
+
+# ---------------------------------------------------- 
+# commands
+# ---------------------------------------------------- 
+#function DDD() {
+#    echo "[Running]" && cat ${running_file} && echo
+#    echo "[Failed]" && cat ${failed_file} && echo
+#    echo "[Stopped]" && cat ${stopped_file}
+#}
+function DDD() {
+    _DDDinit
+    cat ${index_file} | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::"
+}
+
+function DDDup() {
+    _DDDinit
+    line=$(cat .index | sed -e "s:${DDD_SEARCH_DIR}/::" -e "s:/docker-compose.yml::" | peco)
+    yml=$(echo ${line} | cut -d " " -f2)
+    if [ -n "${yml}" ]; then
+        _exec_compose -p DDD up -d && {
+            _add_status running ${yml}
+            #_remove_status failed ${yml}
+        } || _add_status failed ${yml}
+    fi
+}
+
+#function DDDdown() {
+#    yml=$(cat ${running_file} | peco)
+#    [ -n "${yml}" ] && _exec_compose down && {
+#        _remove_status running ${yml}
+#        _remove_status failed ${yml}
+#    }
+#}
+function DDDdown() {
+    _DDDinit
+    line=$(cat .index | grep '\[.*\]' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
+    yml=$(echo ${line} | cut -d " " -f2)
+    [ -n "${yml}" ] && _exec_compose down && {
+        _add_status none ${yml}
+    }
+}
+
+#function DDDstop() {
+#    yml=$(cat ${running_file} | peco)
+#    [ -n "${yml}" ] && _exec_compose stop && {
+#        _remove_status running ${yml}
+#        _add_status stopped ${yml}
+#    }
+#}
+function DDDstop() {
+    _DDDinit
+    line=$(cat .index | grep '\[running\]' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
+    yml=$(echo ${line} | cut -d " " -f2)
+    [ -n "${yml}" ] && _exec_compose stop && {
+        _add_status stopped ${yml}
+    }
+}
+
+function DDDrm() {
+    _DDDinit
+    yml=$(cat ${failed_file} ${stopped_file} | peco)
+    [ -n "${yml}" ] && _exec_compose rm && {
+        _remove_status failed ${yml}
+        _remove_status stopped ${yml}
+    }
+}
+
+function DDDlogs() {
+    _DDDinit
+    yml=$(cat ${running_file} ${failed_file} | peco)
+    [ -n "${yml}" ] && _exec_compose logs
+}
+
+function DDDhome() {
+    _DDDinit
+    cd ${DDD_HOME}
+}
+
+function DDDsearchdir() {
+    _DDDinit
+    cd ${DDD_SEARCH_DIR}
+}
+
+function DDDcd() {
+    _DDDinit
+    path=$(cat ${index_file} | peco)
+    [ -n "${yml}" ] && cd $(echo ${path} | sed "s:/docker-compose.yml::")
+}
+
+# ---------------------------------------------------- 
+# main
+# ---------------------------------------------------- 
+[ ! type docker-compose > /dev/null 2>&1 ] && {
+    echo "you need to install docker-compose first." && return
+}
+
+[ ! type peco > /dev/null 2>&1 ] && {
+    echo "you need to install peco first." && return
+}
+
+[ -z "${DDD_HOME}" ] && echo "set DDD_HOME" && return
+[ -z "${DDD_SEARCH_DIR}" ] && echo "set DDD_SEARCH_DIR" && return
+
+index_file=${DDD_HOME}/.index
+running_file=${DDD_HOME}/.status_running
+failed_file=${DDD_HOME}/.status_failed
+stopped_file=${DDD_HOME}/.status_stopped
