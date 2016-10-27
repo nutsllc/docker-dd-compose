@@ -123,6 +123,18 @@ function DDDsearchdir() {
     DDDcd "${DDD_SEARCH_DIR}"
 }
 
+function DDDedit() {
+    [ -z ${EDITOR} ] && {
+        echo "you need to set EDITOR enviroment variable."
+        echo "ex: export EDITOR=vim"
+        return
+    }
+    line=$(_get_line all)
+    yml=$(_get_yml "${line}")
+    eval $EDITOR ${DDD_SEARCH_DIR}/${yml}/docker-compose.yml
+}
+
+
 # ---------------------------------------------------- 
 # main
 # ---------------------------------------------------- 
