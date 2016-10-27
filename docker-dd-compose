@@ -1,38 +1,17 @@
-#!/bin/bash
-
-index_file=""
-running_file=""
-failed_file=""
-
-yml=""
-
 # ---------------------------------------------------- 
 # private functions
 # ---------------------------------------------------- 
 function _DDDinit() {
-    [ ! -f ${index_file} ] && {
-        find ${DDD_SEARCH_DIR} -name docker-compose.yml > ${index_file}
+    [ ! -f "${index_file}" ] && {
+        find "${DDD_SEARCH_DIR}" -name docker-compose.yml > ${index_file}
     }
-    #touch ${running_file}
-    #touch ${failed_file}
-    #touch ${stopped_file}
-}
-
-function _get_yml() {
-   : 
 }
 
 function _exec_compose() {
-    docker-compose -f ${DDD_SEARCH_DIR}/${yml}/docker-compose.yml $@
+    yml=$1; shift
+    docker-compose -f ${DDD_SEARCH_DIR}/${yml}/docker-compose.yml -p DDD $@
 }
 
-#function _add_status() {
-#    status=$1; yml=$2
-#    if ! cat ${DDD_HOME}/.status_${status} | grep ^${yml}$; then
-#        echo ${yml} >> ${DDD_HOME}/.status_${status}
-#    fi
-#}
-#
 function _add_status() {
     status=$1; yml=$2
     path=${DDD_SEARCH_DIR}/${yml}/docker-compose.yml
@@ -44,98 +23,89 @@ function _add_status() {
     fi
 }
 
-#function _remove_status() {
-#    status=$1; yml=$2
-#    sed -i -e ":^${yml}$:d" ${DDD_HOME}/.status_${status}
-#    sed -i -e ":^$:d" ${DDD_HOME}/.status_${status}
-#}
-
 # ---------------------------------------------------- 
-# commands
+# Commands
 # ---------------------------------------------------- 
-#function DDD() {
-#    echo "[Running]" && cat ${running_file} && echo
-#    echo "[Failed]" && cat ${failed_file} && echo
-#    echo "[Stopped]" && cat ${stopped_file}
-#}
 function DDD() {
     _DDDinit
-    cat ${index_file} | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::"
+    cat "${index_file}" | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::"
 }
 
 function DDDup() {
     _DDDinit
-    line=$(cat .index | sed -e "s:${DDD_SEARCH_DIR}/::" -e "s:/docker-compose.yml::" | peco)
-    yml=$(echo ${line} | cut -d " " -f2)
+    line=$(cat "${index_file}" | sed -e "s:${DDD_SEARCH_DIR}/::" -e "s:/docker-compose.yml::" | peco)
+    yml=$(echo "${line}" | cut -d " " -f2)
     if [ -n "${yml}" ]; then
-        _exec_compose -p DDD up -d && {
+        _exec_compose ${yml} up -d && {
             _add_status running ${yml}
-            #_remove_status failed ${yml}
         } || _add_status failed ${yml}
     fi
 }
 
-#function DDDdown() {
-#    yml=$(cat ${running_file} | peco)
-#    [ -n "${yml}" ] && _exec_compose down && {
-#        _remove_status running ${yml}
-#        _remove_status failed ${yml}
-#    }
-#}
 function DDDdown() {
     _DDDinit
-    line=$(cat .index | grep '\[.*\]' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
-    yml=$(echo ${line} | cut -d " " -f2)
-    [ -n "${yml}" ] && _exec_compose down && {
-        _add_status none ${yml}
+    line=$(cat "${index_file}" | grep '\[.*\] ' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
+    yml=$(echo "${line}" | cut -d " " -f2)
+    [ -n "${yml}" ] && _exec_compose ${yml} down && {
+        _add_status none "${yml}"
     }
 }
 
-#function DDDstop() {
-#    yml=$(cat ${running_file} | peco)
-#    [ -n "${yml}" ] && _exec_compose stop && {
-#        _remove_status running ${yml}
-#        _add_status stopped ${yml}
-#    }
-#}
+function DDDstart() {
+    _DDDinit
+    line=$(cat "${index_file}" | grep '\[.*\] ' | grep -v '\[running\]' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
+    yml=$(echo "${line}" | cut -d " " -f2)
+    [ -n "${yml}" ] && _exec_compose ${yml} start && {
+        _add_status running ${yml}
+    }
+}
+
 function DDDstop() {
     _DDDinit
-    line=$(cat .index | grep '\[running\]' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
-    yml=$(echo ${line} | cut -d " " -f2)
-    [ -n "${yml}" ] && _exec_compose stop && {
+    line=$(cat "${index_file}" | grep '\[running\] ' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
+    yml=$(echo "${line}" | cut -d " " -f2)
+    [ -n "${yml}" ] && _exec_compose ${yml} stop && {
         _add_status stopped ${yml}
     }
 }
 
 function DDDrm() {
     _DDDinit
-    yml=$(cat ${failed_file} ${stopped_file} | peco)
-    [ -n "${yml}" ] && _exec_compose rm && {
-        _remove_status failed ${yml}
-        _remove_status stopped ${yml}
+    line=$(cat "${index_file}" | grep '\[.*\] ' | grep -v '\[running\] ' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
+    yml=$(echo "${line}" | cut -d " " -f2)
+    [ -n "${yml}" ] && _exec_compose ${yml} rm && {
+        _add_status none ${yml}
     }
 }
 
 function DDDlogs() {
     _DDDinit
-    yml=$(cat ${running_file} ${failed_file} | peco)
-    [ -n "${yml}" ] && _exec_compose logs
+    line=$(cat "${index_file}" | grep '\[.*\] ' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
+    yml=$(echo "${line}" | cut -d " " -f2)
+    [ -n "${yml}" ] && _exec_compose ${yml} logs
+}
+
+function DDDps() {
+    _DDDinit
+    line=$(cat "${index_file}" | grep '\[.*\] ' | sed -e "s:${DDD_SEARCH_DIR}/::g" -e "s:/docker-compose.yml::g" | peco)
+    yml=$(echo "${line}" | cut -d " " -f2)
+    [ -n "${yml}" ] && _exec_compose ${yml} ps
 }
 
 function DDDhome() {
     _DDDinit
-    cd ${DDD_HOME}
+    cd "${DDD_HOME}"
 }
 
 function DDDsearchdir() {
     _DDDinit
-    cd ${DDD_SEARCH_DIR}
+    cd "${DDD_SEARCH_DIR}"
 }
 
 function DDDcd() {
     _DDDinit
-    path=$(cat ${index_file} | peco)
-    [ -n "${yml}" ] && cd $(echo ${path} | sed "s:/docker-compose.yml::")
+    path=$(cat "${index_file}" | peco)
+    [ -n "${path}" ] && cd $(echo "${path}" | sed -e "s:^\[.*\]::" -e "s:/docker-compose.yml::")
 }
 
 # ---------------------------------------------------- 
@@ -152,7 +122,5 @@ function DDDcd() {
 [ -z "${DDD_HOME}" ] && echo "set DDD_HOME" && return
 [ -z "${DDD_SEARCH_DIR}" ] && echo "set DDD_SEARCH_DIR" && return
 
-index_file=${DDD_HOME}/.index
-running_file=${DDD_HOME}/.status_running
-failed_file=${DDD_HOME}/.status_failed
-stopped_file=${DDD_HOME}/.status_stopped
+index_file="${DDD_HOME}/.index"
+yml=""
