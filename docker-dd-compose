@@ -1,3 +1,5 @@
+version=0.1
+
 # ---------------------------------------------------- 
 # private functions
 # ---------------------------------------------------- 
@@ -85,9 +87,16 @@ function DDDstop() {
 
 function DDDrm() {
     line=$(_get_line failed-stopped)
-    [ -n "${line}" ] && _exec_compose "${yml}" rm && {
+    [ -n "${line}" ] && _exec_compose "${line}" rm && {
         _add_status none "${line}"
     }
+}
+
+function DDDrestart() {
+    line=$(_get_line running)
+    [ -n "${line}" ] && _exec_compose "${line}" restart && {
+        _add_status running "${line}"
+    } || _add_status failed "${line}"
 }
 
 function DDDlogs() {
@@ -100,9 +109,17 @@ function DDDps() {
     [ -n "${line}" ] && _exec_compose "${line}" ps
 }
 
-function DDDversion() {
+function DDDconfig() {
     line=$(_get_line all)
-    [ -n "${line}" ] && _exec_compose "${line}" version
+    [ -n "${line}" ] && _exec_compose "${line}" config
+}
+
+function DDDport() {
+    echo "not available." && return
+}
+
+function DDDversion() {
+    docker-compose version
 }
 
 # ---------------------------------------------------- 
@@ -123,6 +140,7 @@ function DDDsearchdir() {
     DDDcd "${DDD_SEARCH_DIR}"
 }
 
+# ---------------------------------------------------- 
 function DDDedit() {
     [ -z ${EDITOR} ] && {
         echo "you need to set EDITOR enviroment variable."
@@ -133,7 +151,6 @@ function DDDedit() {
     yml=$(_get_yml "${line}")
     eval $EDITOR ${DDD_SEARCH_DIR}/${yml}/docker-compose.yml
 }
-
 
 # ---------------------------------------------------- 
 # main
